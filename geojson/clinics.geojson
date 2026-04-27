@@ -1,0 +1,12 @@
+{
+"type": "FeatureCollection",
+"name": "clinics",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "Name": "Location 10", "FacilityType": 3, "DemandCount": 59, "DemandWeight": 59.0, "TotalWeighted_DriveTime_Min": 1359.4913553071819, "Proposed_Name": "Lake Cowichan Primary Care Hub", "FacilityID": 566, "SUM_Population_2021": 30682.0, "SUM_Population_65_Plus": 8115.0, "MEAN_Total_Deprivation": 12.431372549019608 }, "geometry": { "type": "Point", "coordinates": [ -124.085933146137108, 48.819950571241193 ] } },
+{ "type": "Feature", "properties": { "Name": "Location 22", "FacilityType": 3, "DemandCount": 35, "DemandWeight": 35.0, "TotalWeighted_DriveTime_Min": 580.11937158677154, "Proposed_Name": "Lytton Community Health Centre", "FacilityID": 592, "SUM_Population_2021": 1339.0, "SUM_Population_65_Plus": 265.0, "MEAN_Total_Deprivation": 13.75 }, "geometry": { "type": "Point", "coordinates": [ -121.627119991517944, 50.284784508701861 ] } },
+{ "type": "Feature", "properties": { "Name": "Mackenzie and District Hospital", "FacilityType": 3, "DemandCount": 3, "DemandWeight": 66.0, "TotalWeighted_DriveTime_Min": 1350.3851951856277, "Proposed_Name": "McLeod Lake Community Health Hub", "FacilityID": 628, "SUM_Population_2021": 446.0, "SUM_Population_65_Plus": 115.0, "MEAN_Total_Deprivation": 14.5 }, "geometry": { "type": "Point", "coordinates": [ -122.903184427563218, 54.87584133893148 ] } },
+{ "type": "Feature", "properties": { "Name": "Location 41", "FacilityType": 3, "DemandCount": 1, "DemandWeight": 33.0, "TotalWeighted_DriveTime_Min": 0.0, "Proposed_Name": "Butler Ridge Community Health Centre", "FacilityID": 631, "SUM_Population_2021": 428.0, "SUM_Population_65_Plus": 115.0, "MEAN_Total_Deprivation": 13.0 }, "geometry": { "type": "Point", "coordinates": [ -122.067942413959116, 56.035538727383077 ] } },
+{ "type": "Feature", "properties": { "Name": "North Peace Primary Care Clinic", "FacilityType": 3, "DemandCount": 1, "DemandWeight": 36.0, "TotalWeighted_DriveTime_Min": 28.002772796109326, "Proposed_Name": "Doig River Community Health Hub", "FacilityID": 634, "SUM_Population_2021": 85.0, "SUM_Population_65_Plus": 15.0, "MEAN_Total_Deprivation": 16.0 }, "geometry": { "type": "Point", "coordinates": [ -120.491454263664565, 56.574414244651081 ] } }
+]
+}

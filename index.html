@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>BC Primary Care Clinic Optimization</title>
+
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <!-- Favicon -->
+        <link rel="shortcut icon" href="../images/favicon.png" />
+        <!-- CSS -->
+        <link rel="stylesheet" href="../css/style.css" />
+
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    </head>
+    <body>
+        <div id="sidebar">
+            <div class="dash-header">
+                <h1>BC Primary Care Optimization</h1>
+                <p class="subtitle">Spatial Accessibility & Risk Mitigation Model</p>
+            </div>
+
+            <button
+                onclick="resetDashboard()"
+                style="
+                    width: 100%;
+                    padding: 10px;
+                    background: #2d3748;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    margin-bottom: 15px;
+                    font-weight: bold;
+                    font-size: 1rem;
+                    transition: 0.2s;
+                "
+            >
+                &#8592; Return to Provincial View
+            </button>
+
+            <div class="kpi-card" style="border-left: 4px solid #ff7800">
+                <div class="kpi-title">Currently Viewing</div>
+                <h2 id="dash-hub-name" style="margin: 5px 0; color: #2d3748; font-size: 1.1rem">
+                    Select a Clinic on the Map
+                </h2>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-title">Total Population Served</div>
+                <div class="kpi-value" id="dash-pop">-</div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-title">Seniors (65+)</div>
+                <div class="kpi-value" id="dash-seniors">-</div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-title">Average Deprivation Score</div>
+                <div class="kpi-value" id="dash-deprivation">-</div>
+            </div>
+
+            <div class="kpi-card" style="padding-bottom: 5px">
+                <div class="kpi-title">Demographic Breakdown</div>
+                <canvas id="demographicChart" height="180" style="margin-top: 15px"></canvas>
+            </div>
+
+            <div class="kpi-card" style="padding-bottom: 5px">
+                <div class="kpi-title">Deprivation Score (vs Prov. Avg of 12.0)</div>
+                <canvas id="deprivationChart" height="150" style="margin-top: 15px"></canvas>
+            </div>
+
+            <div class="kpi-card" style="padding-bottom: 5px">
+                <div class="kpi-title">Site Profile (Index 0-100)</div>
+
+                <div style="position: relative; height: 220px; width: 100%">
+                    <canvas id="radarChart" style="margin-top: 10px"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div id="map"></div>
+
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+        <script>
+            // Initialize the map and set the starting view (Centered on BC)
+            const map = L.map("map").setView([53.7267, -127.6476], 6);
+
+            // Add CartoDB Positron basemap
+            L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+                attribution:
+                    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                subdomains: "abcd",
+                maxZoom: 20,
+            }).addTo(map);
+
+            // Create custom panes
+            map.createPane("baselinePane");
+            map.getPane("baselinePane").style.zIndex = 400; // Bottom layer
+
+            map.createPane("hotspotPane");
+            map.getPane("hotspotPane").style.zIndex = 410;
+
+            map.createPane("catchmentPane");
+            map.getPane("catchmentPane").style.zIndex = 420;
+
+            map.createPane("existingPane");
+            map.getPane("existingPane").style.zIndex = 425;
+
+            map.createPane("clinicPane");
+            map.getPane("clinicPane").style.zIndex = 430; // Top layer
+
+            // Create empty layer groups
+            const proposedClinicsLayer = L.layerGroup().addTo(map);
+            const catchmentLinesLayer = L.layerGroup().addTo(map);
+            const existingFacilitiesLayer = L.layerGroup();
+            const baseline2021Layer = L.layerGroup();
+            const hotspotsLayer = L.layerGroup();
+
+            // Build layer control menu
+            const overlayMaps = {
+                "Proposed Clinics (2026)": proposedClinicsLayer,
+                "Catchment Routes": catchmentLinesLayer,
+                "Primary Care Facilities": existingFacilitiesLayer,
+                "Existing Coverage (2021)": baseline2021Layer,
+                "Vulnerability Hotspots": hotspotsLayer,
+            };
+
+            L.control.layers(null, overlayMaps, { collapsed: false }).addTo(map);
+
+            // load GeoJSONs
+            // Style and Load the Catchment Lines
+            const lineStyle = {
+                color: "#2ca25f",
+                weight: 2,
+                opacity: 0.6,
+            };
+
+            fetch("geojson/catchments.geojson")
+                .then((response) => response.json())
+                .then((data) => {
+                    L.geoJSON(data, {
+                        style: lineStyle,
+                        pane: "catchmentPane",
+                    }).addTo(catchmentLinesLayer);
+                })
+                .catch((error) => console.error("Error loading lines:", error));
+
+            // Style and Load the Final 5 Clinics
+            const clinicMarkerOptions = {
+                pane: "clinicPane",
+                radius: 8,
+                fillColor: "#ff7800",
+                color: "#000",
+                weight: 1,
+                opacity: 1,
+                fillOpacity: 0.9,
+            };
+
+            // Chart.js Initialization
+
+            // Setup the Doughnut Chart (Seniors vs General Pop)
+            const ctxDemo = document.getElementById("demographicChart").getContext("2d");
+            let demographicChart = new Chart(ctxDemo, {
+                type: "doughnut",
+                data: {
+                    labels: ["Seniors (65+)", "Under 65"],
+                    datasets: [
+                        {
+                            data: [0, 100], // Default blank state
+                            backgroundColor: ["#bd0026", "#e2e8f0"],
+                            borderWidth: 0,
+                        },
+                    ],
+                },
+                options: {
+                    responsive: true,
+                    cutout: "70%",
+                    plugins: {
+                        legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 10 } } },
+                    },
+                },
+            });
+
+            // Setup the Bar Chart (Deprivation Score)
+            const ctxDep = document.getElementById("deprivationChart").getContext("2d");
+            let deprivationChart = new Chart(ctxDep, {
+                type: "bar",
+                data: {
+                    labels: ["Selected Clinic", "Provincial Avg"],
+                    datasets: [
+                        {
+                            data: [0, 12.0],
+                            backgroundColor: ["#ff7800", "#cbd5e0"],
+                            borderRadius: 4,
+                        },
+                    ],
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, max: 20 },
+                    },
+                },
+            });
+
+            // Setup the Radar Chart (Site Profile)
+            const ctxRadar = document.getElementById("radarChart").getContext("2d");
+            let radarChart = new Chart(ctxRadar, {
+                type: "radar",
+                data: {
+                    labels: ["Demand Volume", "Socioeconomic Need", "Spatial Isolation"],
+                    datasets: [
+                        {
+                            label: "Site Metrics",
+                            data: [0, 0, 0],
+                            backgroundColor: "rgba(255, 120, 0, 0.4)", // Transparent orange fill
+                            borderColor: "#ff7800",
+                            pointBackgroundColor: "#bd0026",
+                        },
+                    ],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    layout: {
+                        padding: {
+                            left: 20,
+                            right: 20,
+                            top: 10,
+                            bottom: 10,
+                        },
+                    },
+                    scales: {
+                        r: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: { display: false },
+                            pointLabels: {
+                                font: {
+                                    size: 11,
+                                },
+                            },
+                        },
+                    },
+                    plugins: { legend: { display: false } },
+                },
+            });
+
+            // Global variables to store the Provincial aggregates
+            let globalPop = 0;
+            let globalSeniors = 0;
+            let globalDeprivationSum = 0;
+            let totalClinics = 0;
+
+            fetch("geojson/clinics.geojson")
+                .then((response) => response.json())
+                .then((data) => {
+                    // Calculate Provincial Totals on Load
+                    data.features.forEach((feature) => {
+                        globalPop += feature.properties.SUM_Population_2021 || 0;
+                        globalSeniors += feature.properties.SUM_Population_65_Plus || 0;
+                        globalDeprivationSum += feature.properties.MEAN_Total_Deprivation || 0;
+                        totalClinics++;
+                    });
+
+                    const globalDeprivationAvg = globalDeprivationSum / totalClinics;
+
+                    L.geoJSON(data, {
+                        pane: "clinicPane",
+                        pointToLayer: function (feature, latlng) {
+                            return L.circleMarker(latlng, clinicMarkerOptions);
+                        },
+
+                        // The Interactive Dashboard Link
+                        onEachFeature: function (feature, layer) {
+                            // Keep the standard pop-up for quick map context
+                            layer.bindPopup(`<b>${feature.properties.Proposed_Name}</b>`);
+
+                            // Add the Click Event Listener
+                            layer.on("click", function () {
+                                // Smoothly pan and zoom to the clicked clinic (Zoom level 9)
+                                const latlng = layer.getLatLng();
+                                map.flyTo(latlng, 10, { animate: true, duration: 1.5 });
+
+                                // Format the raw data
+                                const rawPop = feature.properties.SUM_Population_2021 || 0;
+                                const rawSeniors = feature.properties.SUM_Population_65_Plus || 0;
+                                const rawDeprivation = feature.properties.MEAN_Total_Deprivation || 0;
+                                const rawDriveTime = feature.properties.TotalWeighted_DriveTime_Min || 0;
+
+                                // Inject the formatted data into the Sidebar DOM
+                                document.getElementById("dash-hub-name").innerText =
+                                    feature.properties.Proposed_Name || "Unnamed Hub";
+                                document.getElementById("dash-pop").innerText = rawPop.toLocaleString();
+                                document.getElementById("dash-seniors").innerText = rawSeniors.toLocaleString();
+                                document.getElementById("dash-deprivation").innerText = rawDeprivation.toFixed(1);
+
+                                // Update Doughnut Chart (Calculate non-seniors so chart equals 100% of pop)
+                                demographicChart.data.datasets[0].data = [rawSeniors, rawPop - rawSeniors];
+                                demographicChart.update();
+
+                                // Update Bar Chart
+                                deprivationChart.data.datasets[0].data = [rawDeprivation, 12.0];
+                                deprivationChart.update();
+
+                                // Updated Radar Chart
+                                // Divide by a logical maximum to get a percentage
+                                const normPop = Math.min((rawPop / 35000) * 100, 100); // Assumes max pop is around 35k
+                                const normNeed = Math.min((rawDeprivation / 20) * 100, 100); // Max deprivation is 20
+                                const normIso = Math.min((rawDriveTime / 1500) * 100, 100); // Assumes max drive time is 1500 mins
+
+                                radarChart.data.datasets[0].data = [normPop, normNeed, normIso];
+                                radarChart.update();
+                            });
+                        },
+                    }).addTo(proposedClinicsLayer);
+
+                    // Fire Reset Function
+                    window.resetDashboard();
+                })
+                .catch((error) => console.error("Error loading clinics:", error));
+
+            // Reset Function
+            window.resetDashboard = function () {
+                // Fly back to Provincial View
+                map.flyTo([53.7267, -127.6476], 6, { animate: true, duration: 1.5 });
+
+                // Push Global Totals to Text Cards
+                document.getElementById("dash-hub-name").innerText = "Provincial Aggregates";
+                document.getElementById("dash-pop").innerText = globalPop.toLocaleString();
+                document.getElementById("dash-seniors").innerText = globalSeniors.toLocaleString();
+                document.getElementById("dash-deprivation").innerText =
+                    globalDeprivationSum > 0 ? (globalDeprivationSum / totalClinics).toFixed(1) : "-";
+
+                // Reset Charts to Global Totals
+                demographicChart.data.datasets[0].data = [globalSeniors, globalPop - globalSeniors];
+                demographicChart.update();
+
+                deprivationChart.data.datasets[0].data = [globalDeprivationSum / totalClinics, 12.0];
+                deprivationChart.update();
+
+                // Set Radar to an "Average" baseline or zero
+                radarChart.data.datasets[0].data = [0, 0, 0];
+                radarChart.update();
+
+                // Close any open popups
+                map.closePopup();
+            };
+
+            // Style and Load Primary Care Facilities
+            const faciltiesStyle = {
+                pane: "existingPane",
+                radius: 4,
+                fillColor: "#800026",
+                color: "#fff",
+                weight: 1,
+                fillOpacity: 0.8,
+            };
+
+            fetch("geojson/existing_facilities.geojson")
+                .then((response) => response.json())
+                .then((data) => {
+                    L.geoJSON(data, {
+                        pointToLayer: (feature, latlng) => L.circleMarker(latlng, faciltiesStyle),
+                        onEachFeature: (feature, layer) => {
+                            layer.bindPopup(`
+                            <div style="font-family: Arial, sans-serif;">
+                                <b>Primary Care Facility</b><br>${feature.properties.facility_name || "Primary Care Clinic"}
+                            </div>
+                        `);
+                        },
+                    }).addTo(existingFacilitiesLayer);
+                })
+                .catch((error) => console.error("Error loading facilities:", error));
+
+            // Style and Load 2021 Baseline Polygons
+            // Create color scale based on cutoff times
+            function getBaselineColor(time) {
+                return time == 10.0
+                    ? "#253494"
+                    : time == 20.0
+                      ? "#2c7fb8"
+                      : time == 30.0
+                        ? "#41b6c4"
+                        : time == 60.0
+                          ? "#a1dab4"
+                          : time == 120.0
+                            ? "#ffffcc"
+                            : "#cccccc";
+            }
+
+            // Apple color dynamically to each polygon
+            function baselineStyle(feature) {
+                return {
+                    fillColor: getBaselineColor(feature.properties.ToBreak),
+                    weight: 0.5,
+                    opacity: 0.8,
+                    color: "#2d3748",
+                    fillOpacity: 0.35,
+                };
+            }
+
+            fetch("geojson/baseline_service_areas.geojson")
+                .then((response) => response.json())
+                .then((data) => {
+                    const polygons = L.geoJSON(data, {
+                        style: baselineStyle,
+                        pane: "baselinePane",
+                        onEachFeature: (feature, layer) => {
+                            layer.bindPopup(`
+                            <div style="font-family: Arial, sans-serif;">
+                                <h4 style="margin-bottom: 5px; color: #333;">2021 Existing Coverage</h4>
+                                <b>Drive Time Band:</b> ${feature.properties.FromBreak} to ${feature.properties.ToBreak} minutes
+                            </div>
+                        `);
+                        },
+                    }).addTo(baseline2021Layer);
+                })
+                .catch((error) => console.error("Error loading Baseline Polygons:", error));
+
+            // Style and Load Hotspots
+            function getHotspotColor(giBin) {
+                return giBin == 3 ? "#bd0026" : giBin == 2 ? "#f03b20" : giBin == 1 ? "#fd8d3c" : "transparent";
+            }
+
+            function hotspotStyle(feature) {
+                return {
+                    fillColor: getHotspotColor(feature.properties.Gi_Bin),
+                    weight: 0.5,
+                    opacity: 1,
+                    color: "white",
+                    fillOpacity: 0.6,
+                };
+            }
+
+            fetch("geojson/hotspots.geojson")
+                .then((response) => response.json())
+                .then((data) => {
+                    const hotspots = L.geoJSON(data, {
+                        style: hotspotStyle,
+                        pane: "hotspotPane",
+                        onEachFeature: (feature, layer) => {
+                            // Format the percentages and drive times
+                            const pctSeniors = (feature.properties.Pct_Seniors * 100)?.toFixed(1);
+                            const driveTime = feature.properties.MIN_Total_DriveTime_Min?.toFixed(1);
+
+                            layer.bindPopup(`
+                            <div style="font-family: Arial, sans-serif; min-width: 200px;">
+                                <h4 style="margin-bottom: 5px; color: #bd0026;">Vulnerability Profile</h4>
+                                <b>DAUID:</b> ${feature.properties.DAUID}<br>
+                                <hr style="margin: 5px 0;">
+                                <b>Master Risk Score:</b> ${feature.properties.Master_Risk_Score}<br>
+                                <b>Total Deprivation:</b> ${feature.properties.Total_Deprivation}<br>
+                                <hr style="margin: 5px 0;">
+                                <b>Population:</b> ${feature.properties.Population_2021}<br>
+                                <b>Seniors (65+):</b> ${pctSeniors}%<br>
+                                <b>Drive to Nearest Clinic:</b> ${driveTime} mins
+                            </div>
+                        `);
+                        },
+                    }).addTo(hotspotsLayer);
+                })
+                .catch((error) => console.error("Error loading HotSpot Polygons:", error));
+
+            // Create a custom master legend control
+            const legend = L.control({ position: "bottomright" });
+
+            // The Update Function: Checks which layers are active and writes the HTML
+            legend.update = function () {
+                if (!this._div) return;
+
+                let html = "";
+
+                // 1. Proposed Solution Group
+                if (map.hasLayer(proposedClinicsLayer) || map.hasLayer(catchmentLinesLayer)) {
+                    html += "<h4>The Model</h4>";
+
+                    if (map.hasLayer(proposedClinicsLayer)) {
+                        html +=
+                            '<div class="legend-item"><div class="legend-circle-clinic" style="background: #ff7800;"></div> Proposed Clinics (2026)</div>';
+                    }
+                    if (map.hasLayer(catchmentLinesLayer)) {
+                        html +=
+                            '<div class="legend-item last"><div class="legend-line-catchment" style="background: #2ca25f;"></div> Catchment Routes</div>';
+                    }
+                }
+
+                // 2. Existing Infrastructure
+                if (map.hasLayer(existingFacilitiesLayer)) {
+                    html += "<h4>Infrastructure</h4>";
+                    html +=
+                        '<div class="legend-item last"><div class="legend-circle-facility" style="background: #800026;"></div> Primary Care Facilities</div>';
+                }
+
+                // 3. Existing Coverage
+                if (map.hasLayer(baseline2021Layer)) {
+                    html += "<h4>Existing Coverage (2021)</h4>";
+                    html +=
+                        '<div class="legend-item"><div class="legend-square-light" style="background: #253494;"></div> 0 - 10 Minutes</div>';
+                    html +=
+                        '<div class="legend-item"><div class="legend-square-light" style="background: #2c7fb8;"></div> 10 - 20 Minutes</div>';
+                    html +=
+                        '<div class="legend-item"><div class="legend-square-light" style="background: #41b6c4;"></div> 20 - 30 Minutes</div>';
+                    html +=
+                        '<div class="legend-item"><div class="legend-square-light" style="background: #a1dab4;"></div> 30 - 60 Minutes</div>';
+                    html +=
+                        '<div class="legend-item last"><div class="legend-square-light" style="background: #ffffcc;"></div> 60 - 120 Minutes</div>';
+                }
+
+                // 4. Vulnerability Hotspots
+                if (map.hasLayer(hotspotsLayer)) {
+                    html += "<h4>Vulnerability Hotspots</h4>";
+                    html +=
+                        '<div class="legend-item"><div class="legend-square" style="background: #bd0026;"></div> 99% Confidence</div>';
+                    html +=
+                        '<div class="legend-item"><div class="legend-square" style="background: #f03b20;"></div> 95% Confidence</div>';
+                    html +=
+                        '<div class="legend-item"><div class="legend-square" style="background: #fd8d3c;"></div> 90% Confidence</div>';
+                }
+
+                // Inject the HTML
+                this._div.innerHTML = html;
+                this._div.style.display = html ? "block" : "none";
+            };
+
+            // Build the container
+            legend.onAdd = function (map) {
+                this._div = L.DomUtil.create("div", "info legend");
+
+                this.update();
+                return this._div;
+            };
+
+            legend.addTo(map);
+
+            // The Event Listeners
+            map.on("overlayadd", function () {
+                legend.update();
+            });
+            map.on("overlayremove", function () {
+                legend.update();
+            });
+        </script>
+    </body>
+</html>
