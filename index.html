@@ -7,9 +7,9 @@
 
         <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
         <!-- Favicon -->
-        <link rel="shortcut icon" href="../images/favicon.png" />
+        <link rel="shortcut icon" href="images/favicon.png" />
         <!-- CSS -->
-        <link rel="stylesheet" href="../css/style.css" />
+        <link rel="stylesheet" href="css/style.css" />
 
         <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     </head>
@@ -404,7 +404,7 @@
                 };
             }
 
-            fetch("geojson/baseline_service_areas.geojson")
+            fetch("geojson/baseline_service_areas_v2.geojson")
                 .then((response) => response.json())
                 .then((data) => {
                     const polygons = L.geoJSON(data, {
@@ -437,7 +437,7 @@
                 };
             }
 
-            fetch("geojson/hotspots.geojson")
+            fetch("geojson/hotspots_v2.geojson")
                 .then((response) => response.json())
                 .then((data) => {
                     const hotspots = L.geoJSON(data, {
