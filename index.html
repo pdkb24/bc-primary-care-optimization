@@ -7,9 +7,9 @@
 
         <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
         <!-- Favicon -->
-        <link rel="shortcut icon" href="images/favicon.png" />
+        <link rel="shortcut icon" href="../images/favicon.png" />
         <!-- CSS -->
-        <link rel="stylesheet" href="css/style.css" />
+        <link rel="stylesheet" href="../css/style.css" />
 
         <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     </head>
@@ -293,25 +293,24 @@
                                 const rawDriveTime = feature.properties.TotalWeighted_DriveTime_Min || 0;
 
                                 // Inject the formatted data into the Sidebar DOM
-                                document.getElementById("dash-hub-name").innerText =
-                                    feature.properties.Proposed_Name || "Unnamed Hub";
-                                document.getElementById("dash-pop").innerText = rawPop.toLocaleString();
-                                document.getElementById("dash-seniors").innerText = rawSeniors.toLocaleString();
-                                document.getElementById("dash-deprivation").innerText = rawDeprivation.toFixed(1);
+                                document.getElementById("dash-hub-name").innerText = feature.properties.Proposed_Name || "Unnamed Hub";
+                                document.getElementById("dash-pop").innerText = rawPop > 0 ? rawPop.toLocaleString() : "Data Suppressed";
+                                document.getElementById("dash-seniors").innerText = rawSeniors > 0 ? rawSeniors.toLocaleString() : "N/A";
+                                document.getElementById("dash-deprivation").innerText = rawDeprivation > 0 ? rawDeprivation.toFixed(1) : "N/A";
 
-                                // Update Doughnut Chart (Calculate non-seniors so chart equals 100% of pop)
-                                demographicChart.data.datasets[0].data = [rawSeniors, rawPop - rawSeniors];
+                                // Update Doughnut Chart (Calculate non-seniors and prevent negative numbers)
+                                const nonSeniors = Math.max(0, rawPop - rawSeniors);
+                                demographicChart.data.datasets[0].data = rawPop > 0 ? [rawSeniors, nonSeniors] : [0, 1]; 
                                 demographicChart.update();
 
                                 // Update Bar Chart
                                 deprivationChart.data.datasets[0].data = [rawDeprivation, 12.0];
                                 deprivationChart.update();
 
-                                // Updated Radar Chart
-                                // Divide by a logical maximum to get a percentage
-                                const normPop = Math.min((rawPop / 35000) * 100, 100); // Assumes max pop is around 35k
-                                const normNeed = Math.min((rawDeprivation / 20) * 100, 100); // Max deprivation is 20
-                                const normIso = Math.min((rawDriveTime / 1500) * 100, 100); // Assumes max drive time is 1500 mins
+                                // Updated Radar Chart (Divide by a logical maximum and prevent division by zero)
+                                const normPop = rawPop > 0 ? Math.min((rawPop / 35000) * 100, 100) : 0;
+                                const normNeed = rawDeprivation > 0 ? Math.min((rawDeprivation / 20) * 100, 100) : 0;
+                                const normIso = rawDriveTime > 0 ? Math.min((rawDriveTime / 1500) * 100, 100) : 0;
 
                                 radarChart.data.datasets[0].data = [normPop, normNeed, normIso];
                                 radarChart.update();
@@ -444,23 +443,30 @@
                         style: hotspotStyle,
                         pane: "hotspotPane",
                         onEachFeature: (feature, layer) => {
-                            // Format the percentages and drive times
-                            const pctSeniors = (feature.properties.Pct_Seniors * 100)?.toFixed(1);
-                            const driveTime = feature.properties.MIN_Total_DriveTime_Min?.toFixed(1);
+                            // 1. Extract the raw values safely
+                            const rawSeniors = feature.properties.Pct_Seniors;
+                            const rawDriveTime = feature.properties.MIN_Total_DriveTime_Min;
 
+                            // 2. Format with Fallbacks (Check if null or undefined)
+                            const pctSeniors = rawSeniors != null ? (rawSeniors * 100).toFixed(1) + "%" : "N/A";
+                            
+                            // If there is a drive time, format it. Otherwise, display "No Route Found"
+                            const driveTime = rawDriveTime != null ? rawDriveTime.toFixed(1) + " mins" : "No Route Found";
+
+                            // 3. Bind the popup with the safe variables
                             layer.bindPopup(`
-                            <div style="font-family: Arial, sans-serif; min-width: 200px;">
-                                <h4 style="margin-bottom: 5px; color: #bd0026;">Vulnerability Profile</h4>
-                                <b>DAUID:</b> ${feature.properties.DAUID}<br>
-                                <hr style="margin: 5px 0;">
-                                <b>Master Risk Score:</b> ${feature.properties.Master_Risk_Score}<br>
-                                <b>Total Deprivation:</b> ${feature.properties.Total_Deprivation}<br>
-                                <hr style="margin: 5px 0;">
-                                <b>Population:</b> ${feature.properties.Population_2021}<br>
-                                <b>Seniors (65+):</b> ${pctSeniors}%<br>
-                                <b>Drive to Nearest Clinic:</b> ${driveTime} mins
-                            </div>
-                        `);
+                                <div style="font-family: Arial, sans-serif; min-width: 200px;">
+                                    <h4 style="margin-bottom: 5px; color: #bd0026;">Vulnerability Profile</h4>
+                                    <b>DAUID:</b> ${feature.properties.DAUID || "Unknown"}<br>
+                                    <hr style="margin: 5px 0;">
+                                    <b>Master Risk Score:</b> ${feature.properties.Master_Risk_Score ?? "N/A"}<br>
+                                    <b>Total Deprivation:</b> ${feature.properties.Total_Deprivation ?? "N/A"}<br>
+                                    <hr style="margin: 5px 0;">
+                                    <b>Population:</b> ${feature.properties.Population_2021 ?? "N/A"}<br>
+                                    <b>Seniors (65+):</b> ${pctSeniors}<br>
+                                    <b>Drive to Nearest Clinic:</b> ${driveTime}
+                                </div>
+                            `);
                         },
                     }).addTo(hotspotsLayer);
                 })
